@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
+from accelerate import Accelerator
 import os
 import math
 from tqdm import tqdm
@@ -158,9 +159,14 @@ class NextTokenDataset(Dataset):
 
 # --- Train Script ---
 if __name__ == "__main__":
-    raw_dataset = load_dataset("xsum", split="train[:10000]")
+    accelerator = Accelerator(mixed_precision="fp16")
+
+    raw_dataset = load_dataset("xsum", split="train[:1000]")
     tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-Coder-1.3B-base", trust_remote_code=True)
-    dataset = NextTokenDataset(raw_dataset, tokenizer)
+    train_data = raw_dataset.select(range(900))
+val_data = raw_dataset.select(range(900, 1000))
+dataset = NextTokenDataset(train_data, tokenizer)
+val_dataset = NextTokenDataset(val_data, tokenizer)
 
     def collate(batch):
         input_seqs = [x[0] for x in batch]
@@ -170,37 +176,59 @@ if __name__ == "__main__":
         return input_padded, target_padded
 
     loader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=collate, drop_last=False)
 
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
+    model = DecoderEncoderDecoderModel(len(tokenizer), dim=512, depth=28, heads=8, ff_hidden=2048)
+    start_epoch = 0
+    if os.path.exists("checkpoint.pt"):
+        print("Loading checkpoint.pt to resume training...")
+        checkpoint = torch.load("checkpoint.pt", map_location="cpu")
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), weight_decay=0.01)
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=0)
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        print(f"Resumed training from epoch {start_epoch}.")
     else:
-        device = torch.device("cpu")
-
-    model = DecoderEncoderDecoderModel(len(tokenizer), dim=512, depth=28, heads=8, ff_hidden=2048).to(device)
+        print("Training from scratch.")
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), weight_decay=0.01)
     total_steps = len(loader) * 100
+
+    # Load best model checkpoint if available
+    if os.path.exists("best_model.pt"):
+        print("Loading best_model.pt to resume training...")
+        model.load_state_dict(torch.load("best_model.pt", map_location="cpu"))
+        print("Resumed model from checkpoint.")
+    else:
+        print("Training from scratch.")
     warmup_steps = int(0.1 * total_steps)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
+    model, optimizer, loader, scheduler = accelerator.prepare(model, optimizer, loader, scheduler)
+
     best_loss = float("inf")
     losses_per_epoch = []
 
-    for epoch in range(10):
+    for epoch in range(start_epoch, 100):
         model.train()
         total_loss = 0
         total_tokens = 0
         progress = tqdm(loader, desc=f"Epoch {epoch + 1}")
-        for input_ids, target_ids in progress:
-            input_ids = input_ids.to(device)
-            target_ids = target_ids.to(device)
+        for step, (input_ids, target_ids) in enumerate(progress):
+            input_ids = input_ids.to(accelerator.device)
+            target_ids = target_ids.to(accelerator.device)
             output = model(input_ids)
             loss = criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            loss = loss / 2  # Gradient accumulation step (e.g., every 2 steps)
+            accelerator.backward(loss)
+
+            if (step + 1) % 2 == 0:
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+
             scheduler.step()
             total_loss += loss.item()
             total_tokens += target_ids.numel()
@@ -209,24 +237,52 @@ if __name__ == "__main__":
         avg_loss = total_loss / len(loader)
         perplexity = math.exp(total_loss / total_tokens)
         losses_per_epoch.append(avg_loss)
-        print(f"Epoch {epoch + 1} - Loss: {avg_loss:.4f}, Perplexity: {perplexity:.2f}")
+                # Evaluate on validation set
+        model.eval()
+        val_loss = 0
+        val_tokens = 0
+        with torch.no_grad():
+            for input_ids, target_ids in val_loader:
+                input_ids = input_ids.to(accelerator.device)
+                target_ids = target_ids.to(accelerator.device)
+                output = model(input_ids)
+                loss = criterion(output.view(-1, output.size(-1)), target_ids.view(-1))
+                val_loss += loss.item()
+                val_tokens += target_ids.numel()
+
+        val_avg_loss = val_loss / len(val_loader)
+        val_perplexity = math.exp(val_loss / val_tokens)
+        print(f"Epoch {epoch + 1} - Train Loss: {avg_loss:.4f}, PPL: {perplexity:.2f} | Val Loss: {val_avg_loss:.4f}, Val PPL: {val_perplexity:.2f}")
+
+        wandb.log({"train_loss": avg_loss, "train_perplexity": perplexity,
+                   "val_loss": val_avg_loss, "val_perplexity": val_perplexity, "epoch": epoch + 1})
+
+        if val_avg_loss < best_loss:
+            best_loss = val_avg_loss
+            checkpoint = {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "epoch": epoch
+            }
+            accelerator.save(checkpoint, "checkpoint.pt")
+            print("Checkpoint saved.")
 
         # Log to wandb
         wandb.log({"loss": avg_loss, "perplexity": perplexity, "epoch": epoch + 1})
 
         if avg_loss < best_loss:
             best_loss = avg_loss
-            torch.save(model.state_dict(), "best_model.pt")
+            accelerator.save(model.state_dict(), "best_model.pt")
             print("Model saved.")
 
     model.eval()
     prompt = "The economy in Europe"
-    input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
+    input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(accelerator.device)
     with torch.no_grad():
         generated_ids = model.generate(input_ids, max_new_tokens=50)
         print("Generated text:", tokenizer.decode(generated_ids[0], skip_special_tokens=True))
 
-    # Optional loss plot upload to wandb
     for i, loss in enumerate(losses_per_epoch):
         wandb.log({"epoch_loss": loss, "epoch": i + 1})
 
