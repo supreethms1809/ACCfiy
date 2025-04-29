@@ -14,24 +14,26 @@ from sentence_transformers import SentenceTransformer
 dataset_path = './dataset/babeltower'
 dataset = load_from_disk(dataset_path)
 dataset = dataset.select(range(5))  # smaller for prototype
-max_new_tokens = 4098
+max_new_tokens = 1024
 
 # Load pre-trained decoder model (DeepSeek R1)
-#model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-model_name = "Qwen/Qwen3-0.6B"
+model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+#model_name = "Qwen/Qwen3-0.6B"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, torch_dtype="auto", device_map=device)
 model.to(device)
-print(model)
-exit()
 
 # Load encoder model for analysis embeddings
 encoder_model_name = "sentence-transformers/all-MiniLM-L6-v2"
-encoder_model = SentenceTransformer(encoder_model_name).to(device)
+encoder_model = SentenceTransformer(encoder_model_name, device=device).to(device)
 
 # Define prompt template
 prompt_template = """
-Analyze the following C++ code for parallelization opportunities and suggest actions to parallelize it.
+You are a high performance computing software engineer.  \n 
+Analyze the following C++ code for parallelization opportunities using CUDA and suggest actions to convert 
+the code from c++ to CUDA. The output should only contain the analysis list and a list of actions to take,
+without any additional text or explanations. do not use any markdown formatting. 
+separate the analysis and actions with a newline. don't add prompt to the output.
 
 Code:
 {code}
@@ -41,7 +43,22 @@ Output format:
 [ACTIONS]: (list of actions to take)
 """
 
+# Prepare the transformation prompt
+transform_prompt_template = """
+You are a high performance computing software engineer.  \n 
+your task is to transform the Given C++ code to an optimized CUDA version.
+The output should not contain any additional text or explanations, just the transformed code. don't use any markdown formatting.
+
+Code:
+{code}
+
+Output format:
+[TRANSFORMED CODE]:
+(your CUDA C++ code here)
+"""
+
 for example in dataset:
+    print("-"*50)
     code_str = example['code']
 
     # Create prompt
@@ -60,7 +77,7 @@ for example in dataset:
         output_hidden_states=False
     )
 
-    decoded_output = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
+    decoded_output = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
     print(f"Model Output:\n{decoded_output}") 
 
     # Parse output into analysis and actions
@@ -74,7 +91,7 @@ for example in dataset:
             print(f"Parsing error: {e}")
 
     # Encode analysis text into embedding
-    analysis_embedding = encoder_model.encode(analysis_text, convert_to_tensor=True)
+    analysis_embedding = encoder_model.encode(analysis_text, convert_to_tensor=True, device=device)
     print(f"Analysis Embedding Shape: {analysis_embedding.shape}")
 
     # Create a two-layer mapper: analysis_embedding -> action_embedding
@@ -88,6 +105,7 @@ for example in dataset:
     ).to(device)
 
     action_embedding = dummy_mapper(analysis_embedding)
+    action_embedding = action_embedding.to(torch.bfloat16)
 
     print(f"Action Embedding Shape: {action_embedding.shape}")
 
@@ -98,19 +116,6 @@ for example in dataset:
     # Load second instance (if not already shared weights, can re-use model otherwise)
     # model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, torch_dtype="auto", device_map=device)
     # model.to(device)
-
-    # Prepare the transformation prompt
-    transform_prompt_template = """
-    Given the following C++ code and the action embedding vector, transform the code into an optimized CUDA version by following the actions indicated by the vector.
-    The output should not contain any additional text or explanations, just the transformed code.
-
-    Code:
-    {code}
-
-    Output format:
-    [TRANSFORMED CODE]:
-    (your CUDA C++ code here)
-    """
 
     transform_prompt = transform_prompt_template.format(
         code=code_str
@@ -126,6 +131,9 @@ for example in dataset:
 
     # Add embeddings
     modified_input_embeds = input_embeds + 0.01 * action_embeds  # Small scaling to avoid destabilizing
+    print(f"Modified Input Embeds Shape: {modified_input_embeds.dtype}")
+    print(f"Action Embeds Shape: {action_embeds.dtype}")
+    print(f"Input Embeds Shape: {input_embeds.dtype}")
 
     # ---------------------------------------------------
     # Generate transformed CUDA code using prompt
@@ -138,6 +146,6 @@ for example in dataset:
         return_dict_in_generate=False
     )
 
-    transformed_code = tokenizer.batch_decode(transform_outputs.sequences, skip_special_tokens=True)[0]
+    transformed_code = tokenizer.batch_decode(transform_outputs, skip_special_tokens=True)[0]
     print("-"*50)
     print(f"Transformed CUDA Code:\n{transformed_code}")
