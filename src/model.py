@@ -8,6 +8,10 @@ from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 import os
 import math
 from tqdm import tqdm
+import wandb
+
+# Initialize wandb
+wandb.init(project="decoder-encoder-decoder-prototype", name="run-1")
 
 # --- Positional Encoding ---
 class PositionalEncoding(nn.Module):
@@ -152,8 +156,9 @@ class NextTokenDataset(Dataset):
         return input_ids, target_ids
 
 
+# --- Train Script ---
 if __name__ == "__main__":
-    raw_dataset = load_dataset("xsum", split="train[:1000]")
+    raw_dataset = load_dataset("xsum", split="train[:10000]")
     tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-Coder-1.3B-base", trust_remote_code=True)
     dataset = NextTokenDataset(raw_dataset, tokenizer)
 
@@ -173,17 +178,17 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = DecoderEncoderDecoderModel(tokenizer.vocab_size, dim=448, depth=28, heads=14, ff_hidden=1792).to(device)
+    model = DecoderEncoderDecoderModel(len(tokenizer), dim=512, depth=28, heads=8, ff_hidden=2048).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), weight_decay=0.01)
-
     total_steps = len(loader) * 100
     warmup_steps = int(0.1 * total_steps)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
-
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
     best_loss = float("inf")
-    for epoch in range(100):
+    losses_per_epoch = []
+
+    for epoch in range(10):
         model.train()
         total_loss = 0
         total_tokens = 0
@@ -203,7 +208,11 @@ if __name__ == "__main__":
 
         avg_loss = total_loss / len(loader)
         perplexity = math.exp(total_loss / total_tokens)
+        losses_per_epoch.append(avg_loss)
         print(f"Epoch {epoch + 1} - Loss: {avg_loss:.4f}, Perplexity: {perplexity:.2f}")
+
+        # Log to wandb
+        wandb.log({"loss": avg_loss, "perplexity": perplexity, "epoch": epoch + 1})
 
         if avg_loss < best_loss:
             best_loss = avg_loss
@@ -216,3 +225,9 @@ if __name__ == "__main__":
     with torch.no_grad():
         generated_ids = model.generate(input_ids, max_new_tokens=50)
         print("Generated text:", tokenizer.decode(generated_ids[0], skip_special_tokens=True))
+
+    # Optional loss plot upload to wandb
+    for i, loss in enumerate(losses_per_epoch):
+        wandb.log({"epoch_loss": loss, "epoch": i + 1})
+
+    wandb.finish()
