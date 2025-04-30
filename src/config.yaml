@@ -1,0 +1,37 @@
+run_config:
+  resume: False
+  train: True
+  eval: True
+  save: True
+  save_path: "./checkpoints/accfiy"
+  eval_path: "./checkpoints/accfiy/eval"
+
+trainer_config:
+  num_epochs: 15
+  learning_rate: 0.0003
+  beta1: 0.9
+  beta2: 0.95
+  weight_decay: 0.1
+  total_steps: 1000
+  warmup_ratio: 0.1
+  gradient_accumulation_steps: 1
+  logging_steps: 50
+  accelerate: True
+  mixed_precision: True
+
+model_config:
+  model_name: "accfiy"
+  tokenizer_name: "deepseek-ai/DeepSeek-Coder-1.3B-base"
+  dim: 512
+  num_layers: 28
+  num_heads: 8
+  ff_hidden_dim: 2048
+
+dataloader_config:
+  dataset_name: "xsum"
+  batch_size: 32
+  max_length: 512
+  size: 100000
+
+
+
