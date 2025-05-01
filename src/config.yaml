@@ -18,20 +18,23 @@ trainer_config:
   logging_steps: 50
   accelerate: True
   mixed_precision: True
+  checkpoint_path: "./checkpoint.pt"
+  decoder_only_training: False
 
 model_config:
   model_name: "accfiy"
   tokenizer_name: "deepseek-ai/DeepSeek-Coder-1.3B-base"
-  dim: 512
+  dim: 1024
   num_layers: 28
   num_heads: 8
-  ff_hidden_dim: 2048
+  ff_hidden_dim: 4096
 
 dataloader_config:
-  dataset_name: "xsum"
-  batch_size: 32
+  dataset_name: "allenai/c4"   #"xsum"
+  batch_size: 64
   max_length: 512
-  size: 100000
+  size: None #100000
+  num_workers: 72
 
 
 

@@ -19,11 +19,19 @@ class trainFunc:
         criterion = nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         return criterion
 
-    def train_decoder_next_tok_pred(self, config):
+    def train_decoder_next_tok_pred(self, config, load_checkpoint=False):
+        if load_checkpoint:
+            trainFuncDecoder = trainFuncDecoder(self.model, self.optimizer, self.scheduler, self.accelerator, self.tokenizer)
+            self.model, self.optimizer, self.scheduler, start_epoch, global_step = trainFuncDecoder.load_checkpoint_decoder(config["trainer_config"]["checkpoint_path"])
+        else:
+            start_epoch = 0
+            global_step = 0
         epochs = config["trainer_config"]["num_epochs"]
         losses_per_epoch = []
         best_loss = float("inf")
-        for epoch in tqdm(range(epochs)):
+        #global_step = 0
+        save_steps = 10000
+        for epoch in tqdm(range(start_epoch, epochs)):
             # Freeze encoder parameters
             self.model.encoder.eval()
             for param in self.model.encoder.parameters():
@@ -51,6 +59,20 @@ class trainFunc:
                 total_tokens += target_ids.numel()
                 progress.set_postfix(loss=loss.item())
 
+                global_step += 1
+                # Save checkpoint every save_steps
+                if global_step % save_steps == 0:
+                    checkpoint = {
+                        "model_state_dict": self.model.state_dict(),
+                        "optimizer_state_dict": self.optimizer.state_dict(),
+                        "scheduler_state_dict": self.scheduler.state_dict(),
+                        "epoch": epoch,
+                        "global_step": global_step
+                    }
+                    checkpoint_path = f"checkpoint_step_{global_step}.pt"
+                    self.accelerator.save(checkpoint, checkpoint_path)
+                    print(f"Checkpoint saved at step {global_step} to {checkpoint_path}")
+
             avg_loss = total_loss / len(self.train_loader)
             perplexity = math.exp(total_loss / total_tokens)
             losses_per_epoch.append(avg_loss)
@@ -63,7 +85,26 @@ class trainFunc:
                     "scheduler_state_dict": self.scheduler.state_dict(),
                     "epoch": epoch
                 }
-                self.accelerator.save(checkpoint, "checkpoint.pt")
+                self.accelerator.save(checkpoint, "checkpoint_best.pt")
                 print("Checkpoint saved.")
 
         return self.model, avg_loss, perplexity, losses_per_epoch
+    
+class trainFuncDecoder:
+    def __init__(self, model, optimizer, scheduler, accelerator, tokenizer):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.accelerator = accelerator
+    
+    def load_checkpoint_decoder(self, checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location=self.accelerator.device)
+        #checkpoint = torch.load(checkpoint_path)
+        model = self.model.decoder.load_state_dict(checkpoint["model_state_dict"])
+        optimizer = self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler = self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        global_step = checkpoint["global_step"]
+        print(f"Checkpoint loaded from {checkpoint_path}, resuming from epoch {start_epoch}.")
+        return model, optimizer, scheduler ,start_epoch, global_step

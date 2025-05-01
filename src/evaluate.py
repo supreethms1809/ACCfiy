@@ -42,14 +42,9 @@ if __name__ == "__main__":
     #print(f"Model: {model}, Optimizer: {optimizer}, Scheduler: {scheduler}")
 
     # Train the decoder model
-    train_func_instance = trainFunc(model, optimizer, train_loader, scheduler, accelerator, tokenizer)
-    model, avg_loss, perplexity, losses_per_epoch = train_func_instance.train_decoder_next_tok_pred(config)
-    print(f"Average Loss: {avg_loss}, Perplexity: {perplexity}")
-
-    # Train the encoder + decoder model
     # Load the saved checkpoint
-    train_decoder_instance = trainFunc(model, optimizer, train_loader, scheduler, accelerator, tokenizer)
-    model, optimizer, scheduler, epoch = train_decoder_instance.load_checkpoint_decoder(config["trainer_config"]["checkpoint_path"])
+    train_func_instance = trainFunc(model, optimizer, train_loader, scheduler, accelerator, tokenizer)
+    model, optimizer, scheduler, epoch = train_func_instance.load_checkpoint(config["trainer_config"]["checkpoint_path"])
     test_prompt = "Overflow pipes at the Burry Inlet near Llanelli are used"
     input_ids = tokenizer(test_prompt, return_tensors="pt")["input_ids"].to(accelerator.device)
     with torch.no_grad():

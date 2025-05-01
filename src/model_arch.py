@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 # --- Positional Encoding ---
 class PositionalEncoding(nn.Module):
-    def __init__(self, dim, max_len=2048):
+    def __init__(self, dim, max_len=1024):
         super().__init__()
         self.pe = torch.zeros(max_len, dim)
         position = torch.arange(0, max_len).unsqueeze(1)
@@ -146,6 +146,16 @@ class DecoderEncoderDecoderModel(nn.Module):
             hidden_combined = hidden1 + z
             hidden2 = self.decoder(hidden_combined, mask=mask)
             logits = self.output_proj(hidden2)
+            next_token = torch.argmax(logits[:, -1, :], dim=-1).unsqueeze(0)
+            input_ids = torch.cat([input_ids, next_token.transpose(0, 1)], dim=1)
+        return input_ids
+    
+    def generate_decoderonly(self, input_ids, max_new_tokens=50):
+        for _ in range(max_new_tokens):
+            x = self.token_embedding(input_ids)
+            mask = self._causal_mask(x)
+            hidden = self.decoder(x, mask=mask)
+            logits = self.output_proj(hidden)
             next_token = torch.argmax(logits[:, -1, :], dim=-1).unsqueeze(0)
             input_ids = torch.cat([input_ids, next_token.transpose(0, 1)], dim=1)
         return input_ids
