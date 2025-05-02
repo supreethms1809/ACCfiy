@@ -6,12 +6,19 @@ from dataloaders import DataLoaders
 from accelerate import Accelerator
 from transformers import AutoTokenizer
 import yaml
+import os
+import gc
+
+gc.collect()
+torch.cuda.empty_cache()
+accelerator = Accelerator(mixed_precision="fp16")
+device = accelerator.device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
 
     # Load configuration
-    with open("config.yaml", "r") as file:
+    with open("/home/sureshm/ssuresh/ACCfiy/src/config.yaml", "r") as file:
         config = yaml.safe_load(file)
 
     # Load tokenizer
@@ -24,7 +31,7 @@ if __name__ == "__main__":
 
     # Initialize the model
     #accelerator = Accelerator(mixed_precision="fp16")
-    model_instance = model_arch.DecoderEncoderDecoderModel(vocab_size, dim=dim, depth=num_layers, heads=num_heads, ff_hidden=ff_hidden).to(device)
+    model_instance = model_arch.DecoderEncoderDecoderModel(vocab_size, dim=dim, depth=num_layers, heads=num_heads, ff_hidden=ff_hidden)
 
     dataloaders = DataLoaders(name=config["dataloader_config"]["dataset_name"],
                               batch_size=config["dataloader_config"]["batch_size"],
