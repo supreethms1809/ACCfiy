@@ -1,0 +1,128 @@
+base_model:
+  base_model_name: qwen
+  base_model_hf_name: Qwen/Qwen3-8B
+  base_model_hf_path:
+  base_model_local_path:
+  base_model_type: qwen
+  base_model_size: 7b
+  base_model_dtype: fp16
+  base_model_quantization: 4bit
+
+combined_model:
+  combined_model_name: qwen
+  combined_model_decoder1_local_path:
+  combined_model_decoder2_local_path:
+  combined_model_mapper_local_path:
+
+model_config:
+  attn_implementation: "flash_attention_2"
+  use_liger: True
+  use_deepspeed:
+    use_zero3: True
+    use_zero2: True
+    use_zero1: True
+  use_dtype: "fp16"
+  use_accelerate: True
+  use_wandb: True
+  use_unsloth: True
+
+training_stage_config:
+  train_model: True
+  train_stage1: True
+  train_stage2: True
+  train_stage3: True
+  train_stage4: True
+
+evaluation_stage_config:
+  eval_model: True
+  eval_stage1: True
+  eval_stage2: True
+  eval_stage3: True
+  eval_stage4: True
+
+training_config:
+  stage1:
+    dataset_name: "derecho"
+    hf_dataset_path: "ssuresh/accfiy"
+    split: "train"
+    max_length: 2048
+    test_run: False
+    test_run_size: 1024
+    train_batch_size: 16
+    eval_batch_size: 16
+    gradient_accumulation_steps: 1
+    gradient_checkpointing: True
+    torch_compile: False
+    fp16: True
+    bf16: False
+    logging_steps: 10
+    save_steps: 100
+    save_total_limit: 10
+    deepspeed_config_file: "/glade/work/ssuresh/aiml/v3/src/run_config/deepspd/qwen_ds.json"
+    num_epochs: 10
+    save_safetensors: False
+    save_only_model: True
+    max_grad_norm: 1.0
+    max_seq_length: 2048
+    max_new_tokens: 2048
+    report_to: "wandb"
+    save_strategy: "steps"
+    eval_strategy: "epoch"
+    run_name: "qwen_stage1"
+    output_dir: "/glade/work/ssuresh/aiml/v3/src/output/qwen_stage1"
+    resume_from_checkpoint: False
+
+  stage2:
+    train_batch_size: 16
+    eval_batch_size: 16
+    learning_rate: 1e-4
+    num_epochs: 10
+    gradient_accumulation_steps: 1
+    max_grad_norm: 1.0
+    max_seq_length: 2048
+    max_new_tokens: 2048
+    save_steps: 100
+
+  stage3:
+    train_batch_size: 16
+    eval_batch_size: 16
+    learning_rate: 1e-4
+    num_epochs: 10
+    gradient_accumulation_steps: 1
+    max_grad_norm: 1.0
+    max_seq_length: 2048
+    max_new_tokens: 2048
+    save_steps: 100
+
+  stage4:
+    train_batch_size: 16
+    eval_batch_size: 16
+    learning_rate: 1e-4
+    num_epochs: 10
+    gradient_accumulation_steps: 1
+    max_grad_norm: 1.0
+    max_seq_length: 2048
+    max_new_tokens: 2048
+    save_steps: 100
+
+evaluation_config:
+  stage1:
+    eval_batch_size: 16
+    max_seq_length: 2048
+    max_new_tokens: 2048
+
+  stage2:
+    eval_batch_size: 16
+    max_seq_length: 2048
+    max_new_tokens: 2048
+
+  stage3:
+    eval_batch_size: 16
+    max_seq_length: 2048
+    max_new_tokens: 2048
+
+  stage4:
+    eval_batch_size: 16
+    max_seq_length: 2048
+    max_new_tokens: 2048
+
