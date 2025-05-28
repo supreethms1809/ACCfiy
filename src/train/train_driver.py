@@ -1,5 +1,6 @@
 from src.model.qwen_model import *
 from src.train.train_stage1 import *
+from src.train.train_stage2 import *
 import os
 
 
@@ -18,10 +19,15 @@ def train_model(config, accelerator):
         decoder1_path = None
 
     if config.training_stage_config.train_stage2:
-        #decoder1_path = train_stage1(config)
-        decoder1_path = None
+        try:
+            decoder1_path = get_decoder1_path(config)
+            print("Decoder1 path found: ", decoder1_path) if accelerator.is_main_process else None
+        except:
+            ValueError("Decoder1 path not found. Initializing from scratch")
+        print("Training stage 2, decoder1_path: ", decoder1_path) if accelerator.is_main_process else None
         decoder2_path = None
         mapper_path = None
-    combined_model = load_combined_model(config, decoder1_path, decoder2_path, mapper_path)
+        combined_model, tokenizer, model_config = load_combined_model(config, decoder1_path, decoder2_path, mapper_path)
+        train_stage2(config, accelerator, tokenizer, combined_model, model_config)
 
 

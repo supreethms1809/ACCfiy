@@ -18,8 +18,10 @@ def main():
     if config.model_config.use_deepspeed.use_zero3: 
         deepspeed_plugin = DeepSpeedPlugin(hf_ds_config=config.training_config.stage1.deepspeed_config_file)
         accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
+        accelerator.init_trackers("ACCfiy")
     else:
         accelerator = Accelerator()
+        accelerator.init_trackers("ACCfiy")
     print(f"Config: {config}") if accelerator.is_main_process else None
 
     # Check training or evaluation
@@ -47,9 +49,10 @@ def main():
         if config.evaluation_stage_config.eval_stage4:
             print("Evaluating stage 4") if accelerator.is_main_process else None
 
-    time.sleep(1000)
+    #time.sleep(1000)
     print(f"Successfully Completed everything") if accelerator.is_main_process else None
     print("-"*50) if accelerator.is_main_process else None
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
