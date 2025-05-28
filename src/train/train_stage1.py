@@ -2,15 +2,16 @@ from src.model.qwen_model import *
 from src.dataset.qwen_dataset import *
 from trl import SFTTrainer, SFTConfig
 import datetime
+import json
 dt = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def train_stage1(config, accelerator):
     print("Training stage 1") if accelerator.is_main_process else None
     ds_check = False
     decoder1, model_config, tokenizer = load_decoder1(config)
-    print(f"decoder1: {decoder1}") if accelerator.is_main_process else None
-    print(f"model_config: {model_config}") if accelerator.is_main_process else None
-    print(f"tokenizer: {tokenizer}") if accelerator.is_main_process else None
+    # print(f"decoder1: {decoder1}") if accelerator.is_main_process else None
+    # print(f"model_config: {model_config}") if accelerator.is_main_process else None
+    # print(f"tokenizer: {tokenizer}") if accelerator.is_main_process else None
     dataset = accfiyDataset(config, tokenizer)
     ds = dataset.load_dataset()
     ds = dataset.tokenize_dataset(ds)
@@ -25,6 +26,10 @@ def train_stage1(config, accelerator):
     ds = ds.train_test_split(test_size=0.1, shuffle=True, seed=42)
     train_ds = ds["train"]
     eval_ds = ds["test"]
+    ds_config_file = f"{config.training_config.stage1.deepspeed_config_file}"
+    with open(ds_config_file, 'r') as f:
+        ds_config = json.load(f)
+    print(f"Deepspeed config file: {ds_config}") if accelerator.is_main_process else None
 
     sft_config = SFTConfig(
         per_device_train_batch_size=config.training_config.stage1.train_batch_size,
@@ -32,7 +37,7 @@ def train_stage1(config, accelerator):
         gradient_accumulation_steps=config.training_config.stage1.gradient_accumulation_steps,
         num_train_epochs=config.training_config.stage1.num_epochs,
         torch_compile=config.training_config.stage1.torch_compile,
-        deepspeed=config.training_config.stage1.deepspeed_config_file,
+        deepspeed=ds_config if config.model_config.use_deepspeed.use_zero3 else None,
         fp16=config.training_config.stage1.fp16,
         bf16=config.training_config.stage1.bf16,
         gradient_checkpointing=config.training_config.stage1.gradient_checkpointing,
@@ -40,7 +45,7 @@ def train_stage1(config, accelerator):
         save_steps=config.training_config.stage1.save_steps,
         save_total_limit=config.training_config.stage1.save_total_limit,
         run_name=f"{config.training_config.stage1.run_name}-{dt}",
-        output_dir=config.training_config.stage1.output_dir,
+        output_dir=f"{config.training_config.stage1.output_dir}",
         save_safetensors=config.training_config.stage1.save_safetensors,
         save_only_model=config.training_config.stage1.save_only_model,
         max_grad_norm=config.training_config.stage1.max_grad_norm,

@@ -5,9 +5,7 @@ import time
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from accelerate import Accelerator
-accelerator = Accelerator()
+from accelerate import Accelerator, DeepSpeedPlugin
 
 def main():
     # Parse arguments
@@ -17,6 +15,11 @@ def main():
     args = parser.parse_args()
 
     config = read_config(args.config)
+    if config.model_config.use_deepspeed.use_zero3: 
+        deepspeed_plugin = DeepSpeedPlugin(hf_ds_config=config.training_config.stage1.deepspeed_config_file)
+        accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
+    else:
+        accelerator = Accelerator()
     print(f"Config: {config}") if accelerator.is_main_process else None
 
     # Check training or evaluation

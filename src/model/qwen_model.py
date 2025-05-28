@@ -20,8 +20,16 @@ def init_model_and_tokenizer_normal(config):
         dtype = torch.float32
     
     tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype)
-    decoder1 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
-    decoder2 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.add_special_tokens({
+        "additional_special_tokens": [
+            "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
+        ]
+    })
+    decoder1, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+    decoder2, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+    decoder1.resize_token_embeddings(len(tokenizer))
+    decoder2.resize_token_embeddings(len(tokenizer))
     model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype)
     return decoder1, decoder2, tokenizer, model_config
 
@@ -40,7 +48,13 @@ def init_model_and_tokenizer_unsloth(config):
         dtype = torch.float32
     
     tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype, device_map=None)
-    decoder1 = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.add_special_tokens({
+        "additional_special_tokens": [
+            "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
+        ]
+    })
+    decoder1, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                              trust_remote_code=True, 
                                              attn_implementation=attn_implementation, 
                                              dtype=dtype, 
@@ -49,7 +63,8 @@ def init_model_and_tokenizer_unsloth(config):
                                              load_in_8bit = False,
                                              load_in_4bit = False,
                                              )
-    decoder2 = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
+    decoder1.resize_token_embeddings(len(tokenizer))
+    decoder2, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                              trust_remote_code=True, 
                                              attn_implementation=attn_implementation, 
                                              dtype=dtype, 
@@ -58,6 +73,7 @@ def init_model_and_tokenizer_unsloth(config):
                                              load_in_8bit = False,
                                              load_in_4bit = False,
                                              )
+    decoder2.resize_token_embeddings(len(tokenizer))
     model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype, device_map=None)
     return decoder1, decoder2, tokenizer, model_config
 
@@ -124,7 +140,7 @@ def load_decoder1(config):
         dtype = torch.float32
         
     if config.model_config.use_unsloth:
-        decoder1 = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
+        decoder1, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                                  trust_remote_code=True, 
                                                  dtype=dtype, 
                                                  attn_implementation=attn_implementation, 
@@ -135,9 +151,22 @@ def load_decoder1(config):
                                                  )
         model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.add_special_tokens({
+            "additional_special_tokens": [
+                "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
+            ]
+        })
+        decoder1.resize_token_embeddings(len(tokenizer))
     else:
-        decoder1 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+        decoder1, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
         model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
-    decoder1 = decoder1[0]
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.add_special_tokens({
+            "additional_special_tokens": [
+                "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
+            ]
+        })
+        decoder1.resize_token_embeddings(len(tokenizer))
     return decoder1, model_config, tokenizer

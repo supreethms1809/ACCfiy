@@ -34,28 +34,31 @@ class accfiyDataset:
             ]
             
             full_prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
-            input_ids = self.tokenizer(
+            tokenized = self.tokenizer(
                 full_prompt,
                 truncation=True,
-                padding=True,
+                max_length=self.max_length,
+                padding="max_length",
                 return_tensors="pt"
             )
-            input_ids = input_ids["input_ids"]
-
+            input_ids = tokenized["input_ids"].squeeze(0)
+            attention_mask = tokenized["attention_mask"].squeeze(0)
+            
             labels = input_ids.clone()
             labels[:-1].fill_(-100)
-            encodings = {"input_ids": input_ids, "labels": labels, "attention_mask": torch.ones_like(input_ids)}
-
-            for k in ["input_ids", "attention_mask", "labels"]:
-                if isinstance(encodings[k], torch.Tensor) and encodings[k].dim() == 2 and encodings[k].shape[0] == 1:
-                    encodings[k] = encodings[k].squeeze(0)
-            return encodings
+            
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels
+            }
         
         tokenized_ds = ds.map(
             tokenize_function,
             remove_columns=ds.column_names,
             num_proc=32
         )
+        #print(tokenized_ds[0])
         size_check = self.check_batch_size(tokenized_ds)
         if size_check:
             print("Batch size check passed")
