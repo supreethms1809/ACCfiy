@@ -1,26 +1,144 @@
 import torch
 import torch.nn as nn
+from transformers import PreTrainedModel, GenerationMixin
 
-class QwenCombinedModel:
+class QwenCombinedModel(PreTrainedModel, GenerationMixin):
     def __init__(self, config, decoder1, decoder2, tokenizer, model_config=None, mapper_state=None):
-        self.config = config
+        super().__init__(model_config)
+        self.run_config = config
         self.decoder1 = decoder1
         self.decoder2 = decoder2
         self.tokenizer = tokenizer
-        self.model_config = model_config
+        self.config = model_config
+        if self.run_config.model_config.use_dtype == "fp16":
+            self.config.torch_dtype = "torch.float16"
+        elif self.run_config.model_config.use_dtype == "bf16":
+            self.config.torch_dtype = "torch.bfloat16"
+        else:
+            self.config.torch_dtype = "torch.float32"
         if mapper_state is None:
             self.mapper = nn.Sequential(
-                nn.Linear(self.model_config.hidden_size, self.model_config.hidden_size),
+                nn.Linear(self.config.hidden_size, self.config.hidden_size),
                 nn.ReLU(),
-                nn.Linear(self.model_config.hidden_size, self.model_config.hidden_size)
+                nn.Linear(self.config.hidden_size, self.config.hidden_size)
             )
         else:
             self.mapper = nn.Sequential(
-                nn.Linear(self.model_config.hidden_size, self.model_config.hidden_size),
+                nn.Linear(self.config.hidden_size, self.config.hidden_size),
                 nn.ReLU(),
-                nn.Linear(self.model_config.hidden_size, self.model_config.hidden_size)
+                nn.Linear(self.config.hidden_size, self.config.hidden_size)
             )
             self.mapper.load_state_dict(mapper_state)
+        self.decoder1.resize_token_embeddings(len(self.tokenizer))
+        self.decoder2.resize_token_embeddings(len(self.tokenizer))
+        self._modules = {
+            "decoder1": self.decoder1,
+            "decoder2": self.decoder2,
+            "mapper": self.mapper
+        }
+        self.config.use_cache = False
+        self.config.attn_implementation = "flash_attention_2"
+        self.mapper_gradient_checkpointing = False
+        self.warnings_issued = {}
+        self.add_model_tags = lambda *args, **kwargs: None
+        self.max_position_embeddings = self.config.max_position_embeddings
 
-    def forward(self, input_ids, attention_mask):
-        pass
+    def forward(self, input_ids, attention_mask, labels, **kwargs):
+        with torch.no_grad():
+            decoder1_output = self.decoder1.generate(
+                input_ids=input_ids, 
+                attention_mask=attention_mask, 
+                max_new_tokens=self.run_config.training_config.stage2.max_new_tokens,
+                temperature=self.run_config.combined_model.combined_model_decoder1_temperature,
+                top_p=self.run_config.combined_model.combined_model_decoder1_top_p,
+                top_k=self.run_config.combined_model.combined_model_decoder1_top_k,
+                min_p=self.run_config.combined_model.combined_model_decoder1_min_p,
+                use_cache=self.run_config.combined_model.combined_model_use_cache,
+            )
+        decoder1_pass_attention_mask = torch.ones_like(decoder1_output)
+        decoder1_embeddings = self.decoder1(decoder1_output, 
+                                            attention_mask=decoder1_pass_attention_mask,
+                                            return_dict_in_generate=True,
+                                            output_hidden_states=True,
+                                            )
+        decoder1_embeddings = decoder1_embeddings.hidden_states[-1][:, input_ids.shape[1]:, :]
+        mapper_embeddings = self.mapper(decoder1_embeddings)
+        modulated_embeddings = mapper_embeddings + decoder1_embeddings
+        modulated_embeddings.requires_grad_()
+        
+        decoder2_output = self.decoder2(
+            input_ids=input_ids,
+            context=modulated_embeddings,
+            attention_mask=attention_mask,
+            labels=labels,
+            **kwargs
+        )
+        return decoder2_output
+    
+    def _modules(self):
+        return self._modules
+    
+    def modules(self):
+        return self._modules
+
+    def get_input_embeddings(self):
+        return self.decoder1.get_input_embeddings()
+    
+    def get_output_embeddings(self):
+        return self.decoder2.get_output_embeddings()
+    
+    def get_hidden_size(self):
+        return self.config.hidden_size
+    
+    def enable_mapper_gradient_checkpointing(self):
+        self.mapper_gradient_checkpointing = True
+
+    def disable_mapper_gradient_checkpointing(self):
+        self.mapper_gradient_checkpointing = False
+
+    def gradient_checkpointing_enable(self, **kwargs):
+        if hasattr(self.decoder1, "gradient_checkpointing_enable"):
+            self.decoder1.gradient_checkpointing_enable(**kwargs)
+        if hasattr(self.decoder2, "gradient_checkpointing_enable"):
+            self.enable_mapper_gradient_checkpointing = True
+            self.decoder2.gradient_checkpointing_enable(**kwargs)
+        self.config.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        if hasattr(self.decoder1, "gradient_checkpointing_disable"):
+            self.decoder1.gradient_checkpointing_disable()
+        if hasattr(self.decoder2, "gradient_checkpointing_disable"):
+            self.enable_mapper_gradient_checkpointing = False
+            self.decoder2.gradient_checkpointing_disable()
+        self.config.gradient_checkpointing = False
+
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
+        """Prepare inputs for the generate method, handling different generation strategies."""
+        attention_mask = kwargs.get("attention_mask", None)
+        
+        # Initial step: get hidden states from decoder1
+        if past_key_values is None:
+            # First step - standard preparation
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "past_key_values": None,
+                "use_cache": kwargs.get("use_cache", False),
+            }
+        else:
+            # Subsequent steps - use cached computation
+            return {
+                "input_ids": input_ids[:, -1:],
+                "attention_mask": attention_mask,
+                "past_key_values": past_key_values,
+                "use_cache": kwargs.get("use_cache", False),
+            }
+
+    def _reorder_cache(self, past_key_values, beam_idx):
+        """Reorder cache for beam search."""
+        reordered_past = ()
+        for layer_past in past_key_values:
+            reordered_past += (tuple(past_state.index_select(0, beam_idx) 
+                                    for past_state in layer_past),)
+        return reordered_past
+    

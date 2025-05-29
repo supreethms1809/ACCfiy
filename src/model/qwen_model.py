@@ -22,6 +22,7 @@ def init_model_and_tokenizer_normal(config, decoder1, decoder2, tokenizer, model
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype)
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = "left"
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
@@ -62,6 +63,7 @@ def init_model_and_tokenizer_unsloth(config, decoder1, decoder2, tokenizer, mode
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype, device_map=None)
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = "left"
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
@@ -125,9 +127,9 @@ def load_combined_model(config, decoder1_path=None, decoder2_path=None, mapper_p
         if decoder1_path is not None:
             print("Loading decoder1 from: ", decoder1_path)
             if config.model_config.use_unsloth:
-                decoder1 = unsloth_model.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
+                decoder1, _ = unsloth_model.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
             else:
-                decoder1 = AutoModelForCausalLM.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+                decoder1, _ = AutoModelForCausalLM.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
             tokenizer = AutoTokenizer.from_pretrained(decoder1_path, trust_remote_code=True, dtype=dtype)
             model_config = AutoConfig.from_pretrained(decoder1_path, trust_remote_code=True, dtype=dtype)
         else:
@@ -139,9 +141,9 @@ def load_combined_model(config, decoder1_path=None, decoder2_path=None, mapper_p
         if decoder2_path is not None:
             print("Loading decoder2 from: ", decoder2_path)
             if config.model_config.use_unsloth:
-                decoder2 = unsloth_model.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
+                decoder2, _ = unsloth_model.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
             else:
-                decoder2 = AutoModelForCausalLM.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+                decoder2, _ = AutoModelForCausalLM.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
             tokenizer = AutoTokenizer.from_pretrained(decoder2_path, trust_remote_code=True, dtype=dtype)
             model_config = AutoConfig.from_pretrained(decoder2_path, trust_remote_code=True, dtype=dtype)
         else:
@@ -163,7 +165,7 @@ def load_combined_model(config, decoder1_path=None, decoder2_path=None, mapper_p
         init = False
     else:
         init = True
-        
+    
     combined_model = init_combined_model(config, decoder1, decoder2, tokenizer, model_config, mapper_state, init)
     print("Successfully loaded combined model")
 
@@ -199,6 +201,7 @@ def load_decoder1(config):
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
             ]
         })
+        tokenizer.padding_side = "left"
         decoder1.resize_token_embeddings(len(tokenizer))
     else:
         decoder1, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
@@ -210,6 +213,7 @@ def load_decoder1(config):
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
             ]
         })
+        tokenizer.padding_side = "left"
         decoder1.resize_token_embeddings(len(tokenizer))
     return decoder1, model_config, tokenizer
 
