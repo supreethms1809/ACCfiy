@@ -8,6 +8,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from accelerate import Accelerator, DeepSpeedPlugin
 
 def main():
+    # Set environment variables
+    os.environ["TRANSFORMERS_VERBOSITY"] = "info"
+    
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="./src/model_config/qwen_config.yaml")

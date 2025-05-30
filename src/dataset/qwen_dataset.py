@@ -111,6 +111,22 @@ class accfiySyntheticDataset:
                     "content": f"<kernel>\n{example['cuda_code']}\n</kernel>"
                 }
             ]
+            messages_decoder1 = [
+                {
+                    "role": "user",
+                    "content": f"You are a helpful assistant that analyzes the C++ code and provides an analysis and instructions for parallelization of the code using CUDA. \
+                        Your task is to analyze C++ code and provide an analysis and instructions for parallelization of the code using CUDA. \
+                        <task> ANALYZE_FOR_PARALLELIZATION </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
+                }
+            ]
+            full_prompt_decoder1 = self.tokenizer.apply_chat_template(messages_decoder1, tokenize=False, add_generation_prompt=False, enable_thinking=False)
+            tokenized_decoder1 = self.tokenizer(
+                full_prompt_decoder1,
+                truncation=True,
+                max_length=self.max_length,
+                padding="max_length",
+                return_tensors="pt"
+            )
             full_prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False, enable_thinking=False)
             tokenized = self.tokenizer(
                 full_prompt,
@@ -119,7 +135,7 @@ class accfiySyntheticDataset:
                 padding="max_length",
                 return_tensors="pt"
             )
-
+            input_ids_decoder1 = tokenized_decoder1["input_ids"].squeeze(0)
             input_ids = tokenized["input_ids"].squeeze(0)
             attention_mask = tokenized["attention_mask"].squeeze(0)
             
@@ -128,6 +144,7 @@ class accfiySyntheticDataset:
             
             return {
                 "input_ids": input_ids,
+                "input_ids_decoder1": input_ids_decoder1,
                 "attention_mask": attention_mask,
                 "labels": labels
             }

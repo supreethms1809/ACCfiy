@@ -31,11 +31,11 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
             self.mapper.load_state_dict(mapper_state)
         self.decoder1.resize_token_embeddings(len(self.tokenizer))
         self.decoder2.resize_token_embeddings(len(self.tokenizer))
-        self._modules = {
-            "decoder1": self.decoder1,
-            "decoder2": self.decoder2,
-            "mapper": self.mapper
-        }
+        # self._modules = {
+        #     "decoder1": self.decoder1,
+        #     "decoder2": self.decoder2,
+        #     "mapper": self.mapper
+        # }
         self.config.use_cache = False
         self.config.attn_implementation = "flash_attention_2"
         self.mapper_gradient_checkpointing = False
@@ -43,11 +43,23 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
         self.add_model_tags = lambda *args, **kwargs: None
         self.max_position_embeddings = self.config.max_position_embeddings
 
-    def forward(self, input_ids, attention_mask, labels, **kwargs):
-        with torch.no_grad():
+    def forward(self, input_ids, attention_mask, labels, input_ids_decoder1=None, **kwargs):
+        if input_ids.dim() == 3 and input_ids.shape[1] == 1:
+            input_ids = input_ids.squeeze(1)
+        if attention_mask.dim() == 3 and attention_mask.shape[1] == 1:
+            attention_mask = attention_mask.squeeze(1)
+        if input_ids_decoder1.dim() == 3 and input_ids_decoder1.shape[1] == 1:
+            input_ids_decoder1 = input_ids_decoder1.squeeze(1)
+
+        print(f"Input ids requires grad at start: {input_ids.requires_grad}")
+        print(f"Attention mask requires grad at start: {attention_mask.requires_grad}")
+        print(f"Labels requires grad at start: {labels.requires_grad}")
+        print(f"Input ids decoder1 requires grad at start: {input_ids_decoder1.requires_grad}")
+        # # Generate with decoder1 in inference mode
+        # with torch.no_grad():
+        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
             decoder1_output = self.decoder1.generate(
-                input_ids=input_ids, 
-                attention_mask=attention_mask, 
+                input_ids=input_ids_decoder1,  
                 max_new_tokens=self.run_config.training_config.stage2.max_new_tokens,
                 temperature=self.run_config.combined_model.combined_model_decoder1_temperature,
                 top_p=self.run_config.combined_model.combined_model_decoder1_top_p,
@@ -55,31 +67,37 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
                 min_p=self.run_config.combined_model.combined_model_decoder1_min_p,
                 use_cache=self.run_config.combined_model.combined_model_use_cache,
             )
-        decoder1_pass_attention_mask = torch.ones_like(decoder1_output)
-        decoder1_embeddings = self.decoder1(decoder1_output, 
-                                            attention_mask=decoder1_pass_attention_mask,
-                                            return_dict_in_generate=True,
-                                            output_hidden_states=True,
-                                            )
-        decoder1_embeddings = decoder1_embeddings.hidden_states[-1][:, input_ids.shape[1]:, :]
-        mapper_embeddings = self.mapper(decoder1_embeddings)
-        modulated_embeddings = mapper_embeddings + decoder1_embeddings
-        modulated_embeddings.requires_grad_()
         
-        decoder2_output = self.decoder2(
-            input_ids=input_ids,
-            context=modulated_embeddings,
-            attention_mask=attention_mask,
-            labels=labels,
-            **kwargs
-        )
-        return decoder2_output
-    
-    def _modules(self):
-        return self._modules
-    
-    def modules(self):
-        return self._modules
+        # Clone and detach all tensors that will be used in autograd
+        decoder1_output = decoder1_output.clone().detach()
+        print(f"Decoder1 output: {decoder1_output}")
+        decoder1_embeddings = self.decoder1.get_input_embeddings()(decoder1_output)
+        
+        # Process through mapper with autocast
+        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
+            mapper_embeddings = self.mapper(decoder1_embeddings)
+            # Use addition instead of inplace add
+            modulated_embeddings = mapper_embeddings + decoder1_embeddings
+        
+        # Enable gradients for the modulated embeddings
+        modulated_embeddings.requires_grad_(True)
+
+        print(f"Modulated embeddings requires grad later: {modulated_embeddings.requires_grad}")
+        print(f"Input ids requires grad later: {input_ids.requires_grad}")
+        print(f"Attention mask requires grad later: {attention_mask.requires_grad}")
+        print(f"Labels requires grad later: {labels.requires_grad}")
+
+        # Generate with decoder2
+        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
+            outputs2 = self.decoder2(
+                input_ids=input_ids,
+                context=modulated_embeddings,
+                attention_mask=attention_mask,
+                labels=labels,
+                **kwargs
+            )
+        
+        return outputs2
 
     def get_input_embeddings(self):
         return self.decoder1.get_input_embeddings()
