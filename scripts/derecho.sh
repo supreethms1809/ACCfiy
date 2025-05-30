@@ -58,7 +58,7 @@ done
 echo -e "\nHostfile Contents:"
 cat $hostfile && echo
 
-export CODE_HOME=/glade/work/ssuresh/aiml/v3/
+export CODE_HOME=/glade/work/ssuresh/aiml/ACCfiy/
 cd $CODE_HOME || { echo "Failed to cd to $CODE_HOME"; exit 1; }
 export ACCELERATE_HOSTFILE=$hostfile
 
@@ -72,8 +72,19 @@ accelerate launch \
     --mixed_precision "fp16" \
     --use_deepspeed \
     --deepspeed_config_file "$CODE_HOME/src/run_config/deepspd/qwen_ds.json" \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 4 \
     --zero3_init_flag True \
     --deepspeed_hostfile $hostfile \
     --dynamo_backend=no \
     "$CODE_HOME/main.py"
+
+# accelerate launch \
+#     --config_file "$CODE_HOME/src/run_config/accel/qwen_accel_unsloth.yaml" \
+#     --num_processes "$total_gpus" \
+#     --num_machines "$num_nodes" \
+#     --main_process_ip "$head_node_ip" \
+#     --main_process_port 29502 \
+#     --mixed_precision "fp16" \
+#     --gradient_accumulation_steps 4 \
+#     --dynamo_backend=no \
+#     "$CODE_HOME/main.py"

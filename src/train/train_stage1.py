@@ -74,7 +74,7 @@ def train_stage1(config, accelerator):
             print("Starting training stage 1 from scratch") if accelerator.is_main_process else None
             trainer.train()
             print("Training stage 1 completed") if accelerator.is_main_process else None
-        decoder1.save_model(config.training_config.stage1.output_dir)
+        trainer.save_model(config.training_config.stage1.output_dir)
         print(f"Model saved to {config.training_config.stage1.output_dir}") if accelerator.is_main_process else None
     else:
         print("Training stage 1 not enabled") if accelerator.is_main_process else None

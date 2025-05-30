@@ -1,14 +1,13 @@
-import unsloth
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-from unsloth import FastLanguageModel as unsloth_model
 from src.model.qwen_combined_model import QwenCombinedModel
 import torch
 import os
 
 def init_model_and_tokenizer_normal(config, decoder1, decoder2, tokenizer, model_config):
+    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
     print("Initializing model and tokenizer")
     if config.model_config.attn_implementation == "flash_attention_2":
         attn_implementation = "flash_attention_2"
+        #use_flash_attn= True
     else:
         attn_implementation = "eager"
 
@@ -31,12 +30,20 @@ def init_model_and_tokenizer_normal(config, decoder1, decoder2, tokenizer, model
     else:
         tokenizer = tokenizer
     if decoder1 is None:
-        decoder1, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+        decoder1 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, 
+                                                           trust_remote_code=True, 
+                                                           attn_implementation=attn_implementation, 
+                                                           #use_flash_attention_2=True,
+                                                           torch_dtype=dtype)
         decoder1.resize_token_embeddings(len(tokenizer))
     else:
         decoder1 = decoder1
     if decoder2 is None:
-        decoder2, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+        decoder2 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, 
+                                                           trust_remote_code=True, 
+                                                           attn_implementation=attn_implementation, 
+                                                           #use_flash_attention_2=True,
+                                                           torch_dtype=dtype)
         decoder2.resize_token_embeddings(len(tokenizer))
     else:
         decoder2 = decoder2
@@ -47,6 +54,9 @@ def init_model_and_tokenizer_normal(config, decoder1, decoder2, tokenizer, model
     return decoder1, decoder2, tokenizer, model_config
 
 def init_model_and_tokenizer_unsloth(config, decoder1, decoder2, tokenizer, model_config):
+    import unsloth
+    from unsloth import FastLanguageModel as unsloth_model
+    from transformers import AutoTokenizer, AutoConfig
     print("Initializing model and tokenizer")
     if config.model_config.attn_implementation == "flash_attention_2":
         attn_implementation = "flash_attention_2"
@@ -74,7 +84,8 @@ def init_model_and_tokenizer_unsloth(config, decoder1, decoder2, tokenizer, mode
     if decoder1 is None:
         decoder1, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                                 trust_remote_code=True, 
-                                                attn_implementation=attn_implementation, 
+                                                attn_implementation=attn_implementation,
+                                                #use_flash_attention_2=True,
                                                 dtype=dtype, 
                                                 device_map=None, 
                                                 full_finetuning = True,
@@ -87,7 +98,8 @@ def init_model_and_tokenizer_unsloth(config, decoder1, decoder2, tokenizer, mode
     if decoder2 is None:
         decoder2, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                                 trust_remote_code=True, 
-                                                attn_implementation=attn_implementation, 
+                                                attn_implementation=attn_implementation,
+                                                #use_flash_attention_2=True,
                                                 dtype=dtype, 
                                                 device_map=None, 
                                                 full_finetuning = True,
@@ -127,9 +139,24 @@ def load_combined_model(config, decoder1_path=None, decoder2_path=None, mapper_p
         if decoder1_path is not None:
             print("Loading decoder1 from: ", decoder1_path)
             if config.model_config.use_unsloth:
-                decoder1, _ = unsloth_model.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
+                import unsloth
+                from unsloth import FastLanguageModel as unsloth_model
+                from transformers import AutoTokenizer, AutoConfig
+                decoder1, _ = unsloth_model.from_pretrained(decoder1_path, trust_remote_code=True, 
+                                                            attn_implementation=attn_implementation, 
+                                                            #use_flash_attention_2=True,
+                                                            dtype=dtype, 
+                                                            device_map=None, 
+                                                            full_finetuning = True, 
+                                                            load_in_8bit = False, 
+                                                            load_in_4bit = False)
             else:
-                decoder1, _ = AutoModelForCausalLM.from_pretrained(decoder1_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+                from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+                decoder1 = AutoModelForCausalLM.from_pretrained(decoder1_path, 
+                                                                   trust_remote_code=True, 
+                                                                   attn_implementation=attn_implementation, 
+                                                                   #use_flash_attention_2=True,
+                                                                   torch_dtype=dtype)
             tokenizer = AutoTokenizer.from_pretrained(decoder1_path, trust_remote_code=True, dtype=dtype)
             model_config = AutoConfig.from_pretrained(decoder1_path, trust_remote_code=True, dtype=dtype)
         else:
@@ -141,9 +168,24 @@ def load_combined_model(config, decoder1_path=None, decoder2_path=None, mapper_p
         if decoder2_path is not None:
             print("Loading decoder2 from: ", decoder2_path)
             if config.model_config.use_unsloth:
-                decoder2, _ = unsloth_model.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype, device_map=None, full_finetuning = True, load_in_8bit = False, load_in_4bit = False)
+                import unsloth
+                from unsloth import FastLanguageModel as unsloth_model
+                from transformers import AutoTokenizer, AutoConfig
+                decoder2, _ = unsloth_model.from_pretrained(decoder2_path,
+                                                            trust_remote_code=True,
+                                                            attn_implementation=attn_implementation, 
+                                                            #use_flash_attention_2=True,
+                                                            dtype=dtype, device_map=None, 
+                                                            full_finetuning = True, 
+                                                            load_in_8bit = False, 
+                                                            load_in_4bit = False)
             else:
-                decoder2, _ = AutoModelForCausalLM.from_pretrained(decoder2_path, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+                from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+                decoder2 = AutoModelForCausalLM.from_pretrained(decoder2_path, 
+                                                                   trust_remote_code=True, 
+                                                                   attn_implementation=attn_implementation, 
+                                                                   #use_flash_attention_2=True,
+                                                                   dtype=dtype)
             tokenizer = AutoTokenizer.from_pretrained(decoder2_path, trust_remote_code=True, dtype=dtype)
             model_config = AutoConfig.from_pretrained(decoder2_path, trust_remote_code=True, dtype=dtype)
         else:
@@ -184,10 +226,14 @@ def load_decoder1(config):
         dtype = torch.float32
         
     if config.model_config.use_unsloth:
+        import unsloth
+        from unsloth import FastLanguageModel as unsloth_model
+        from transformers import AutoTokenizer, AutoConfig
         decoder1, _ = unsloth_model.from_pretrained(config.base_model.base_model_hf_name, 
                                                  trust_remote_code=True, 
                                                  dtype=dtype, 
                                                  attn_implementation=attn_implementation, 
+                                                 #use_flash_attention_2=True,
                                                  device_map=None, 
                                                  full_finetuning = True,
                                                  load_in_8bit = False,
@@ -204,7 +250,12 @@ def load_decoder1(config):
         tokenizer.padding_side = "left"
         decoder1.resize_token_embeddings(len(tokenizer))
     else:
-        decoder1, _ = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, attn_implementation=attn_implementation, dtype=dtype)
+        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+        decoder1 = AutoModelForCausalLM.from_pretrained(config.base_model.base_model_hf_name, 
+                                                           trust_remote_code=True, 
+                                                           attn_implementation=attn_implementation, 
+                                                           #use_flash_attention_2=True,
+                                                           torch_dtype=dtype)
         model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.eos_token
