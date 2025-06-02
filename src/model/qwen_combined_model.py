@@ -38,13 +38,11 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
         self.add_model_tags = lambda *args, **kwargs: None
         self.max_position_embeddings = self.config.max_position_embeddings
 
-    def forward(self, input_ids, attention_mask, labels, input_ids_decoder1=None, **kwargs):
-        if input_ids.dim() == 3 and input_ids.shape[1] == 1:
-            input_ids = input_ids.squeeze(1)
-        if attention_mask.dim() == 3 and attention_mask.shape[1] == 1:
-            attention_mask = attention_mask.squeeze(1)
-        if input_ids_decoder1.dim() == 3 and input_ids_decoder1.shape[1] == 1:
-            input_ids_decoder1 = input_ids_decoder1.squeeze(1)
+    def forward(self, input_ids, attention_mask, labels, input_ids_decoder1, **kwargs):
+        print(f"input_ids.shape: {type(input_ids)}")
+        print(f"attention_mask.shape: {type(attention_mask)}")
+        print(f"labels.shape: {type(labels)}")
+        print(f"input_ids_decoder1.shape: {type(input_ids_decoder1)}")
 
         # Clone and detach inputs to ensure they're in the correct state
         input_ids = input_ids.clone().detach()
