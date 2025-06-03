@@ -90,7 +90,7 @@ class CustomSFTTrainer(SFTTrainer):
                     tokenized = processing_class(
                         text=example["text"],
                         truncation=True,
-                        max_length=args.max_length,
+                        max_length=1024,
                         padding="max_length",
                         return_tensors="pt"
                     )
@@ -99,7 +99,7 @@ class CustomSFTTrainer(SFTTrainer):
                     tokenized_decoder1 = processing_class(
                         text=example["text_decoder1"],
                         truncation=True,
-                        max_length=args.max_length,
+                        max_length=1024,
                         padding="max_length",
                         return_tensors="pt"
                     )
@@ -115,6 +115,7 @@ class CustomSFTTrainer(SFTTrainer):
                         "input_ids": tokenized["input_ids"].squeeze(0),
                         "attention_mask": tokenized["attention_mask"].squeeze(0),
                         "input_ids_decoder1": tokenized_decoder1["input_ids"].squeeze(0),
+                        "attention_mask_decoder1": tokenized_decoder1["attention_mask"].squeeze(0),
                         "labels": tokenized["input_ids"].squeeze(0).clone()
                     }
 
@@ -122,7 +123,7 @@ class CustomSFTTrainer(SFTTrainer):
 
             # Pack or truncate if needed
             if packing and args.max_length is not None:
-                dataset = dataset.select_columns(["input_ids", "attention_mask", "input_ids_decoder1", "labels"])
+                dataset = dataset.select_columns(["input_ids", "attention_mask", "input_ids_decoder1", "attention_mask_decoder1", "labels"])
                 dataset = pack_dataset(dataset, args.max_length, map_kwargs)
             elif args.max_length is not None:
                 dataset = truncate_dataset(dataset, args.max_length, map_kwargs)
@@ -157,7 +158,7 @@ def train_stage2(config, accelerator, tokenizer, combined_model, model_config):
             return {}
             
         # Select only the required fields
-        required_fields = ['input_ids', 'attention_mask', 'input_ids_decoder1', 'labels']
+        required_fields = ['input_ids', 'attention_mask', 'input_ids_decoder1', 'attention_mask_decoder1', 'labels']
         batch = {}
         
         for field in required_fields:
@@ -207,6 +208,7 @@ def train_stage2(config, accelerator, tokenizer, combined_model, model_config):
         save_only_model=config.training_config.stage2.save_only_model,
         max_grad_norm=config.training_config.stage2.max_grad_norm,
         max_seq_length=config.training_config.stage2.max_seq_length,
+        max_length = config.training_config.stage2.max_length,
         save_strategy=config.training_config.stage2.save_strategy,
         eval_strategy=config.training_config.stage2.eval_strategy,
         report_to=config.training_config.stage2.report_to,
@@ -222,6 +224,7 @@ def train_stage2(config, accelerator, tokenizer, combined_model, model_config):
         processing_class=tokenizer,
         data_collator=custom_collate_fn,
     )
+    print("args : ", trainer.args) if accelerator.is_main_process else None
 
     if config.training_stage_config.train_stage2:
         print("Starting training stage 2") if accelerator.is_main_process else None

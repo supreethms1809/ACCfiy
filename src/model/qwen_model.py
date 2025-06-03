@@ -1,5 +1,5 @@
-import unsloth
-from unsloth import FastLanguageModel as unsloth_model
+#import unsloth
+#from unsloth import FastLanguageModel as unsloth_model
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
 from src.model.qwen_combined_model import QwenCombinedModel
 import torch
@@ -22,7 +22,6 @@ def init_model_and_tokenizer_normal(config, decoder1, decoder2, tokenizer, model
     
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype)
-        tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
@@ -71,7 +70,6 @@ def init_model_and_tokenizer_unsloth(config, decoder1, decoder2, tokenizer, mode
     
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True, dtype=dtype, device_map=None)
-        tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
@@ -229,7 +227,6 @@ def load_decoder1(config):
                                                  )
         model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
-        tokenizer.pad_token = tokenizer.eos_token
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
@@ -245,7 +242,6 @@ def load_decoder1(config):
                                                            torch_dtype=dtype)
         model_config = AutoConfig.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(config.base_model.base_model_hf_name, trust_remote_code=True)
-        tokenizer.pad_token = tokenizer.eos_token
         tokenizer.add_special_tokens({
             "additional_special_tokens": [
                 "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"

@@ -9,6 +9,7 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
         self.decoder1 = decoder1
         self.decoder2 = decoder2
         self.tokenizer = tokenizer
+        self.tokenizer.padding_side = "left"
         self.config = model_config
         if self.run_config.model_config.use_dtype == "fp16":
             self.config.torch_dtype = "torch.float16"
@@ -38,30 +39,34 @@ class QwenCombinedModel(PreTrainedModel, GenerationMixin):
         self.add_model_tags = lambda *args, **kwargs: None
         self.max_position_embeddings = self.config.max_position_embeddings
 
-    def forward(self, input_ids, attention_mask, labels, input_ids_decoder1, **kwargs):
-        print(f"input_ids.shape: {type(input_ids)}")
-        print(f"attention_mask.shape: {type(attention_mask)}")
-        print(f"labels.shape: {type(labels)}")
-        print(f"input_ids_decoder1.shape: {type(input_ids_decoder1)}")
+    def forward(self, input_ids, attention_mask, labels, input_ids_decoder1, attention_mask_decoder1, **kwargs):
+        #print(f"input_ids_decoder1.shape: {input_ids_decoder1.shape}")
 
         # Clone and detach inputs to ensure they're in the correct state
         input_ids = input_ids.clone().detach()
         attention_mask = attention_mask.clone().detach()
         labels = labels.clone().detach()
         input_ids_decoder1 = input_ids_decoder1.clone().detach()
+        #print(f"max_new_tokens set to: {self.run_config.training_config.stage2.max_new_tokens}")
 
         # Generate with decoder1 in inference mode
-        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
+        with torch.no_grad():
+            self.decoder1.eval()
             decoder1_output = self.decoder1.generate(
-                input_ids=input_ids_decoder1,  
+                input_ids=input_ids_decoder1,
+                attention_mask=attention_mask_decoder1,
                 max_new_tokens=self.run_config.training_config.stage2.max_new_tokens,
                 temperature=self.run_config.combined_model.combined_model_decoder1_temperature,
                 top_p=self.run_config.combined_model.combined_model_decoder1_top_p,
                 top_k=self.run_config.combined_model.combined_model_decoder1_top_k,
                 min_p=self.run_config.combined_model.combined_model_decoder1_min_p,
-                use_cache=self.run_config.combined_model.combined_model_use_cache,
+                use_cache=self.run_config.combined_model.combined_model_decoder1_use_cache,
             )
+        # print(f"decoder1_output.shape: {decoder1_output.shape}")
+        # print(f"decoder1_output: {decoder1_output[:,input_ids_decoder1.shape[1]:]}")
+        # print(f"decoded decoder1_output: {self.tokenizer.batch_decode(decoder1_output[:,input_ids_decoder1.shape[1]:], skip_special_tokens=True)}")
         
+        # exit()
         # Clone and detach decoder1 output
         decoder1_output = decoder1_output.clone().detach()
         
